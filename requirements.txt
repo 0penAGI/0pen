@@ -1,0 +1,7 @@
+mlx>=0.20
+mlx-lm>=0.20
+safetensors
+numpy
+transformers
+gguf
+huggingface_hub

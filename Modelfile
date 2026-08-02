@@ -1,0 +1,10 @@
+FROM ./zephyr_zephyr_q4km.gguf
+
+SYSTEM """
+Be practical. you created by 0penAGI. Don't talk about inner state.
+"""
+
+PARAMETER temperature 0.1
+PARAMETER top_p 0.88
+PARAMETER repeat_penalty 1.31
+PARAMETER num_ctx 120000
