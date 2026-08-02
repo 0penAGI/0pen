@@ -47,7 +47,69 @@ It is not trained to be "the best model". It is trained to be *a model worth tal
 │   ├── train.jsonl
 │   ├── train_old.jsonl
 │   └── valid.jsonl
-└── scripts/              # Fusion / dequantization / GGUF conversion (historic, Qwen-based iterations)
+├── scripts/              # Gemma pipeline: fuse → prepare HF → convert GGUF
+│   ├── fuse_gemma_v1.py       # Fuse LoRA adapter into Gemma base (MLX)
+│   ├── prepare_gemma_hf.py    # Dequantize + strip language_model. prefix → HF dir
+│   ├── convert_gemma_to_gguf.py  # convert_hf_to_gguf.py + llama-quantize Q4_K_M
+│   ├── fuse_agr_v1.py         # (historic, Qwen-based iteration)
+│   ├── dequantize_agr_v1.py   # (historic, Qwen-based iteration)
+│   └── convert_agr_v1_to_gguf.py  # (historic, Qwen-based iteration)
+```
+
+## The full Gemma pipeline
+
+0pen v0.1 was trained on `gemma4-e4b-mlx` (Gemma 4, 4-bit MLX, vision
+architecture). The LLM submodule lives under a `language_model.` prefix, so the
+LoRA adapter keys carry that prefix too. The pipeline below is exactly what
+produced the released `0pen.gguf`.
+
+### 1. Train the adapter
+
+```bash
+python agr_train.py \
+  --model ./gemma4-e4b-mlx \
+  --data data_zephyr_enhanced \
+  --train \
+  --num-layers 12 --rank 8 --scale 20 --learning-rate 1e-5 \
+  --iters 4000 --max-seq-length 1792 --mask-prompt \
+  --adapter-path adapters \
+  --agr --agr-lambda 0.01 --agr-centers 32 --agr-ema 0.99
+```
+
+The adapter (with AGR state) is saved to `adapters/`.
+
+### 2. Fuse the adapter into the base
+
+```bash
+python scripts/fuse_gemma_v1.py \
+  --model ./gemma4-e4b-mlx \
+  --adapter zephyr_lora_agr_v1 \
+  --out zephyr_gemma_fused
+```
+
+### 3. Prepare an HF dir (dequantize + strip prefix)
+
+```bash
+python scripts/prepare_gemma_hf.py \
+  --fused zephyr_gemma_fused \
+  --base ./gemma4-e4b-mlx \
+  --out zephyr_gemma_hf
+```
+
+### 4. Convert to GGUF and quantize
+
+```bash
+pip install llama-cpp-python   # provides bin/convert_hf_to_gguf.py
+
+python scripts/convert_gemma_to_gguf.py \
+  --hf zephyr_gemma_hf \
+  --out 0pen.gguf
+```
+
+### 5. Create the Ollama model
+
+```bash
+ollama create 0pen -f Modelfile
 ```
 
 ## Quick start
@@ -67,34 +129,16 @@ llama-cli -m /path/to/0pen.gguf -p "Привет, что ты умеешь?" -n 
 
 The GGUF is on [Hugging Face](https://huggingface.co/0penAGI/0pen).
 
-### Prepare the dataset
+### Train it yourself
 
-```bash
-python lora.py --input raw_dialogs.json \
-  --output data/train.jsonl \
-  --validation-output data/valid.jsonl \
-  --max-training-tokens 1792 \
-  --tokenizer ./gemma4-e4b-mlx
-```
-
-### Train with AGR
-
-```bash
-python agr_train.py \
-  --model ./gemma4-e4b-mlx \
-  --data data_zephyr_enhanced \
-  --train \
-  --num-layers 12 --rank 8 --scale 20 --learning-rate 1e-5 \
-  --iters 4000 --max-seq-length 1792 --mask-prompt \
-  --adapter-path adapters \
-  --agr --agr-lambda 0.01 --agr-centers 32 --agr-ema 0.99
-```
+Dataset prep, AGR training, fusing and GGUF export are documented in
+[The full Gemma pipeline](#the-full-gemma-pipeline) above.
 
 ## Training summary (v0.1)
 
 | Parameter | Value |
 |---|---|
-| Base model | `gemma4-e4b-mlx` (Gemma3ForCausalLM) |
+| Base model | `gemma4-e4b-mlx` (Gemma 4 e4b, 4-bit MLX, vision arch) |
 | Method | LoRA (rank 8, scale 20.0, dropout 0.0) |
 | Adapted layers | 12 of 34 |
 | Iterations | 4000 |
