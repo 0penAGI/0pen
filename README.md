@@ -1,12 +1,22 @@
 # 0pen by 0penAGI
 
-**Experimental conversational identity — a local assistant exploring continuity, memory, and process-oriented dialogue.**
+**Experimental language model trained to form collaborative engineering thinking — a co-author, not an oracle.**
 
 > ⚠️ Research Preview (v0.1). This is an early release for testing and discussion, not a finished product.
 
 **Downloads & runnable model:** [huggingface.co/0penAGI/0pen](https://huggingface.co/0penAGI/0pen)
 
 ---
+
+## The elevator pitch
+
+0pen is an experimental language model, fine-tuned on Gemma (4B), focused on forming **collaborative engineering thinking** — not just improving answer style.
+
+Unlike base models, which tend toward "encyclopedic lectures" and the generation of grandiose but declarative concepts, 0pen behaves like a **researcher in a laboratory**: it moves quickly to modular design, operates in mechanistic terms (`O(1)`, `decay_rate`, graphs), accepts hard constraints without defensive reactions, and proposes iterative, verifiable solutions. It is a co-author model, not an oracle.
+
+## The philosophy
+
+This repository contains not just weights, but the **full training pipeline** of the 0pen model. Our goal is to show that with a properly selected dataset and aggressive LoRA parameters (e.g., `scale=20.0`), you can change not just the *style* of a model's answers, but its **cognitive track (reasoning trajectory)**. We turned a model from an "essay generator" into an "engineer co-author".
 
 ## What is 0pen?
 
@@ -18,16 +28,47 @@ The project grew from scratch in this repository:
 - **Training** — LoRA fine-tuning on Gemma 4 (e4b-mlx) with an experimental **AGR** (Attractor Geometry Repeller) regularization to prevent mode collapse.
 - **Export** — fused → dequantized → GGUF (Q4_K_M), ready for Ollama.
 
-## Why this model exists
+## Behavioral signature
 
-Most fine-tuned models are optimized for one thing: following instructions well. 0pen is interested in something slightly different — being a **consistent presence in a conversation**:
+What 0pen changes compared to base Gemma:
 
-- a personality that persists across turns and sessions,
-- honest self-description (including admitting limits),
-- dialogue that feels like an exchange, not a lookup table,
-- reflecting on *how* it answers, not just *what* it answers.
+| Characteristic | Base Gemma | 0pen |
+| :--- | :--- | :--- |
+| **Time to first idea** | Long preamble, philosophical introductions | Immediate transition to a modular action plan |
+| **Lexicon** | Abstract, declarative ("metaphysics", "resonance") | Mechanistic, engineering ("nodes", "weights", "O(1)") |
+| **Reaction to constraints** | Attempts to bypass or apologizes | Instant adaptation and search for an alternative algorithm |
+| **Response format** | A closed "mini-article" or lecture | An open dialogue that proposes next steps |
 
-It is not trained to be "the best model". It is trained to be *a model worth talking to* — and worth watching evolve.
+## Reproducing the "cognitive shift"
+
+The exact command that produced the released adapter (`adapters/`):
+
+```bash
+python agr_train.py \
+  --model ./gemma4-e4b-mlx \
+  --data data_zephyr_enhanced \
+  --train \
+  --num-layers 12 --rank 8 --scale 20 --learning-rate 1e-5 \
+  --iters 4000 --max-seq-length 1792 --mask-prompt \
+  --adapter-path adapters \
+  --agr --agr-lambda 0.01 --agr-centers 32 --agr-ema 0.99
+```
+
+The two knobs behind the behavioral shift, and how they work:
+
+- **`scale=20.0` (LoRA scale)** — intentionally far above the typical 1–4. Experimentally confirmed: this high scale, combined with selective layer coverage, acts as an *attractor*, switching the model from passive text generation into an active, pragmatic co-author and suppressing the base model's hallucinatory grandiosity.
+- **`--num-layers 12` (target layers: 12 of 34)** — selective coverage that reshapes the reasoning pattern while preserving base knowledge.
+
+The mlx_lm LoRA configuration encoded in `adapters/adapter_config.json`:
+
+```python
+lora_parameters = {"rank": 8, "dropout": 0.0, "scale": 20.0}
+# num_layers: 12 of 34, applied to the language_model.* projection layers
+```
+
+### What is AGR?
+
+**AGR — Attractor Geometry Repeller.** A custom latent-space regularizer that maintains a bank of attractor centers and computes a repeller loss pushing hidden states away from frequently visited regions. During LoRA fine-tuning this prevents mode collapse — the model keeps its full behavioral range instead of collapsing into a few over-learned templates. See `agr.py` (32 centers, EMA 0.99, lambda 0.01 in this release).
 
 ## Repository layout
 
@@ -129,6 +170,14 @@ llama-cli -m /path/to/0pen.gguf -p "Привет, что ты умеешь?" -n 
 
 The GGUF is on [Hugging Face](https://huggingface.co/0penAGI/0pen).
 
+### Recommended prompting
+
+The model is at its best in **collaborative design** mode. Prompts that set context and impose constraints activate the engineering track:
+
+> "Let's design a [system/mechanism]. We have a hard constraint: [e.g., O(1) complexity, no external APIs]. Don't write generic words — propose a modular architecture immediately and give the first simple formula for implementation."
+
+Open-ended essay prompts will work but won't use the model's strengths.
+
 ### Train it yourself
 
 Dataset prep, AGR training, fusing and GGUF export are documented in
@@ -150,10 +199,11 @@ Dataset prep, AGR training, fusing and GGUF export are documented in
 
 ## Known limitations
 
+- May be **overly brief** on creative or artistic tasks.
+- On very long reasoning chains (>10 steps), the high LoRA `scale` can occasionally cause cyclic repetition — use `presence_penalty` or explicitly ask the model to "summarize".
+- Tends to propose simplified, "engineering" solutions where the user might expect deep theoretical analysis.
 - Self-description often still inherits the base **Gemma** ("I am Google's model").
 - The LoRA was trained on only **12 of 34 layers** — top layers are unadapted.
-- `scale=20.0` is unusually high (normal is 1–4); some behavior may be skewed.
-- The model can be unstable on long reasoning chains.
 
 These are known, accepted limitations of a research preview. They are part of the experiment, not hidden bugs.
 
