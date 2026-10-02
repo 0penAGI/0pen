@@ -1,8 +1,6 @@
 # 0pen by 0penAGI
 
-**Experimental language model trained to form collaborative engineering thinking — a co-author, not an oracle.**
-
-> ⚠️ Research Preview (v0.1). This is an early release for testing and discussion, not a finished product.
+** Language model trained to form collaborative engineering thinking — a co-author.
 
 **Downloads & runnable model:** [huggingface.co/0penAGI/0pen](https://huggingface.co/0penAGI/0pen)
 
